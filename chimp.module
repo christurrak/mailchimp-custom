@@ -1,0 +1,550 @@
+<?php
+module_load_include('php', 'mailchimp', 'MCAPI.class');
+module_load_include('php', 'chimp', 'inc/chimp');
+
+// Mailchimp - create and admin campaigns
+
+// hook_menu
+
+function chimp_menu() {
+  $items['mailchimp-create']=array(
+    'title'=> 'Create MC Newsletter Campaign',
+    'page callback' => 'chimp_create',
+    'access arguments' => array('access content'),
+  );
+
+   $items['mailchimp-campaign_send']=array(
+    'title'=> 'Send created campaign',
+    'page callback' => 'chimp_send_campaign',
+    'access arguments' => array('access content'),
+    'acces callback' => TRUE,
+    'type' => MENU_CALLBACK,
+  );
+
+   $items['mailchimp-send']=array(
+      'title'=> 'Admin Mailchimp Campaigns',
+      'page callback' => 'chimp_send',
+      'access arguments' => array('access content'),
+//      'acces callback' => TRUE,
+//      'type' => MENU_CALLBACK,
+  );
+  return $items;
+}
+
+// page Menue
+
+function chimp_create(){
+  $output = t('Mail Chimp Newsletter Generator beta').'<br /><br />';
+  $output .= drupal_get_form('chimp_create_form');
+  return $output;
+}
+
+
+function chimp_send(){
+  $output = t('Campaigns:');
+  $output .= drupal_get_form('chimp_admin_form');
+  return $output;
+}
+
+
+function chimp_send_campaign(){
+  $output = t('Test:');
+  $output .= $_GET['cid'];
+  $output = drupal_get_form('chimp_send_campaign_form',$_GET['cid']);
+  // $output .= $_GET['cid'];
+  return $output;
+}
+
+
+
+// Campaign Create Form
+
+
+
+function chimp_create_form($form_state){
+
+    $templates=get_templates();
+
+    $lists=get_lists();
+
+   foreach ($lists as $list) {
+
+    $list_names[$list['id']]= $list['name'];
+    $lists_id_by_name= array($list['name'] => $list['id']);
+      };
+
+     //aktuellen Schritt ermitteln
+  $step = !empty($form_state['storage']['step']) ? (int)$form_state['storage']['step'] : 1;
+
+  //Schritt um 1 erh�hen
+  $form_state['storage']['step'] = $step + 1;
+  //Elemente f�r die verschieden Formularschritte erstellen
+
+  switch($step) {
+    //Schritt 1
+    case '1':
+      // Choose LIsts
+
+   $form['list_descr'] = array(
+      '#prefix' => '<h3>',
+      '#value' => t('Please choose your Subcriber List'),
+      '#suffix' => '</h3>',
+  );
+
+
+
+      $form['lists'] = array(
+      '#title'=>t(''),
+      '#type' => 'select',
+      '#options' => $list_names,
+      '#description' => t('subscriber - list')
+  );
+
+
+
+   $form['template_descr'] = array(
+      '#prefix' => '<h3>',
+      '#value' => t('Please choose your Template'),
+      '#suffix' => '</h3>',
+  );
+
+  foreach ($templates as $template) {
+
+
+    $form['template_img_'.$template['id']] = array(
+      '#prefix' => '<div style= "float: left;padding:10px">',
+      '#value' => '<p>'.$template['name'].'<br /></p><img src='.$template['preview_image'].'>',
+      '#suffix' => '</div>'
+  );
+
+          $template_array[$template['id']] =  $template['name'];
+      };
+
+  $form['templates'] = array(
+       '#prefix' => '<div style= "clear:both">',
+      '#title'=>t(''),
+      '#type' => 'select',
+      '#options' => $template_array,
+      '#description' => t('Template'),
+      '#suffix' => '</div>'
+  );
+
+
+      $button_text = t('next');
+    break;
+
+    //Schritt 2
+    case '2':
+
+     $form['cont_descr'] = array(
+      '#prefix' => '<h2>',
+      '#value' => t('Please enter your Content.'),
+      '#suffix' => '</h2>',
+  );
+
+     $form['mail'] = array(
+      '#title'=>t('E-mail'),
+      '#type' => 'textfield',
+      '#description' => t('enter sendmail address')
+  );
+
+
+    $form['subject'] = array(
+      '#title'=>t('title'),
+      '#type' => 'textfield',
+      '#description' => t('Please enter the title / subject')
+  );
+
+     $form['name'] = array(
+      '#title'=>t('Name'),
+      '#type' => 'textfield',
+      '#description' => t('name sender')
+  );
+
+  $form['field1']['content_header'] = array(
+      '#title'=>t('Header'),
+      '#type' => 'textarea',
+      '#description' => t('Bitte geben Sie hier den Header-Inhalt des NL ein.'),
+      '#weight' => '1'
+  );
+
+  $form['field1']['format'] = filter_form(1,2,array('field1','test'));
+//  $form['format'] = filter_form();
+
+  $form['field2']['content'] = array(
+      '#title'=>t('Inhalt'),
+      '#type' => 'textarea',
+      '#description' => t('Bitte geben Sie hier den Inhalt des Newsletters ein.'),
+      '#weight' => '3'
+  );
+
+  $form['field2']['format'] = filter_form(1,4,array('field2','test'));
+
+    $form['upload'] = array(
+  '#type' => 'file',
+  '#title' => t('Bild 1'),
+  '#size' => 40,
+);
+      //Text f�r den 'Weiter / Absenden' - Button festlegen
+      $button_text = t('next step');
+
+    break;
+    //Schritt 3:
+	  case '3':
+
+
+
+   $form['campaign_descr'] = array(
+      '#prefix' => '<h2>',
+      '#value' => t('A campaign with the following settings will be created:'),
+      '#suffix' => '</h2>',
+  );
+
+  $form['campaign_subject'] = array(
+      '#title' => 'Subject',
+      '#prefix' => '<p>',
+      '#value' => '<strong>'.t('Subject:').'</strong>'.'<br />'.$form_state['storage']['values']['subject'],
+      '#suffix' => '</p>',
+  );
+
+  $form['campaign_header'] = array(
+      '#prefix' => '<p>',
+      '#value' => '<strong>'.t('Header:').'</strong>'.$form_state['storage']['values']['content_header'],
+      '#suffix' => '</p>',
+  );
+
+    $form['campaign_content'] = array(
+      '#prefix' => '<p>',
+      '#value' => '<strong>'.t('Content:').'</strong>'.$form_state['storage']['values']['content'],
+      '#suffix' => '</p>',
+     );
+
+  $form['campaign_mail'] = array(
+      '#prefix' => '<p>',
+      '#value' => '<strong>'.t('eMail:').'</strong>'.'<br />'.$form_state['storage']['values']['mail'],
+      '#suffix' => '</p>',
+  );
+
+  $form['campaign_name'] = array(
+      '#prefix' => '<p>',
+      '#value' => '<strong>'.t('Name:').'</strong>'.'<br />'.$form_state['storage']['values']['name'],
+      '#suffix' => '</p>',
+  );
+
+  $form['campaign_lists'] = array(
+      '#prefix' => '<p>',
+      '#value' => '<strong>'.t('List ID:').'</strong>'.'<br />'.$form_state['storage']['values']['lists'],
+      '#suffix' => '</p>',
+  );
+
+  $form['campaign_templates'] = array(
+      '#prefix' => '<p>',
+      '#value' =>  '<strong>'.t('Template ID:').'</strong>'.'<br />'.$form_state['storage']['values']['templates'],
+      '#suffix' => '</p>',
+  );
+
+    $form['lists'] = array(
+      '#title'=>t('send test'),
+      '#type' => 'checkbox',
+      '#options' =>t('send test'),
+      '#description' => t(''),
+  );
+
+  $form['test_email'] = array(
+      '#title'=>t(' test mail recipient'),
+      '#type' => 'textfield',
+      '#description' => t('eMail Adress of testreciepient')
+  );
+
+
+
+      //Text f�r den 'Weiter / Absenden' - Button festlegen
+      $button_text = t('Create and view campaign');
+	  break;
+	  //etc.
+
+        case '4':
+
+
+           break;
+
+          }
+    	/*
+   * Buttons
+   * - erscheinen generisch unter den verschieden schritten
+   * - $button_text dient zur differenzierten Beschrifftung des 'Weiter / Absenden' - Button's
+   */
+
+  //ab dem 2. Schritt den 'Zur�ck' - Button anzeigen
+	if($form_state['storage']['step'] > 2) {
+    $form['back_button'] = array(
+      '#type' => 'submit',
+      '#value' => t('back'),
+      '#submit' => array('chimp_create_back'),
+    );
+  }
+
+  if($form_state['storage']['step'] < 5) {
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => $button_text,
+  );
+
+  }
+
+  return $form;
+}
+
+function chimp_send_campaign_form($test,$cid){
+
+  $form['csend'] = array(
+    '#title'=> 'Campaign',
+    '#type' => 'fieldset',
+  );
+
+  $form['csend']['preview'] = array(
+    '#prefix'=>'<div style="width:100px">',
+    '#type' => 'item',
+    '#title'=>t('Preview'),
+    '#description' => campaign_preview($cid),
+    '#suffix'=>'</div>'
+  );
+
+  $form['send_now_button'] = array(
+    '#title'=> 'Send Campaign',
+    '#type' => 'fieldset',
+  );
+
+  $form['send_now_button']['send_now'] = array(
+    '#type' => 'submit',
+    '#name' => $cid,
+    '#value' => t('send now'),
+    '#submit' => array('chimp_send_campaign_submit'),
+   );
+
+  $form['send_scheduled'] = array(
+    '#title'=> 'Send scheduled',
+    '#type' => 'fieldset',
+  );
+
+  $form['send_scheduled']['send_at'] = array(
+    '#title' => t('Send campaign at'),
+    '#type' => 'date',
+    '#description' => t('send date'),
+    '#date_format' => 'Y-m-d H:i',
+    '#default_value' => array(
+      'month' => format_date(time(), 'custom', 'n'),
+      'day' => format_date(time(), 'custom', 'j'),
+      'year' => format_date(time(), 'custom', 'Y'),
+    ),
+  );
+
+   $form['send_scheduled']['send_scheduled'] = array(
+    '#type' => 'submit',
+    '#name' => $cid,
+    '#value' => t('send scheduled'),
+    '#submit' => array('chimp_send_campaign_submit'),
+   );
+
+  return $form;
+}
+
+// Admin Campaigns Form
+
+function chimp_admin_form() {
+
+   $campaigns = get_campaigns();
+   // dsm($campaigns);
+  foreach ($campaigns as $campaign) {
+
+    $form[$campaign['title']] = array(
+      '#title'=> $campaign['title'],
+      '#type' => 'fieldset',
+      '#collapsible' => 'true',
+      '#collapsed' => 'true'
+      );
+
+
+
+   $form[$campaign['title']]['name'] = array(
+      '#type' => 'item',
+      '#title'=>t('Name'),
+      '#description' =>  $campaign['title']
+  );
+
+   $form[$campaign['title']]['created'] = array(
+        '#type' => 'item',
+      '#title'=>t('Created on'),
+      '#description' => date("d.m.Y.H.i", strtotime($campaign['create_time'])),
+  );
+
+
+
+if ($campaign['send_time'] ){
+
+      $form[$campaign['title']]['send'] = array(
+        '#type' => 'item',
+      '#title'=>t('Sent on'),
+      '#description' => date("d.m.Y.H.i", strtotime($campaign['send_time']))
+  );
+
+
+
+}
+else{
+
+      $form[$campaign['title']]['send'] = array(
+        '#type' => 'item',
+      '#title'=>t('Sent on'),
+      '#description' => 'this campaign was not sent'
+  );
+
+
+  }
+
+    $form[$campaign['title']]['send_at'] = array(
+    '#title' => t('Send campaign at'),
+    '#type' => 'date',
+    '#description' => t('send date'),
+    '#default_value' => array(
+      'month' => format_date(time(), 'custom', 'n'),
+      'day' => format_date(time(), 'custom', 'j'),
+      'year' => format_date(time(), 'custom', 'Y'),
+    ),
+  );
+
+
+     $form[$campaign['title']]['send_now'] = array(
+      '#type' => 'submit',
+      '#name' => $campaign['id'],
+      '#value' => t('send now'),
+      '#submit' => array('chimp_admin_submit'),
+    );
+
+
+   $form[$campaign['title']]['preview'] = array(
+       '#prefix'=>'<div style="width:100px">',
+       '#type' => 'item',
+      '#title'=>t('Preview'),
+      '#description' => campaign_preview($campaign['id']),
+       '#suffix'=>'</div>'
+  );
+
+}
+  return $form;
+}
+
+
+function chimp_create_form_validate($form, &$form_state) {
+  //Validierung beim Klicken auf den 'Zur�ck' - Button umgehen
+  if($form_state['clicked_button']['#submit'][0] != 'chimp_create_back') {
+    //schrittabh�ngige Validierung
+    switch($form_state['storage']['step']) {
+      //Schritt 1 Validieung
+      case '2':
+
+      break;
+      //Schritt 2 Validierung
+      case '3':
+
+      break;
+      //Schritt 3 Validierung
+      case '4':
+
+      break;
+    }
+  }
+}
+
+
+// Validierung
+
+//function chimp_createform_validate($form,&$form_state) {
+//  if ($form_state['values']['content']==''){
+//    form_set_error('content',t('Bitte geben Sie einen Inhalt ein'));
+//  }
+//}
+
+//function chimp_sendform_validate($form,&$form_state) {
+//  if ($form_state['values']['content']==''){
+//    form_set_error('content',t('Bitte geben Sie einen Inhalt ein'));
+//  }
+//}
+
+
+// Submitfunktion f�r den 'Zur�ck' - Button
+function chimp_create_back($form, &$form_state) {
+  /*
+   * - alle gesendeten Werte in $form_state['storage']['back_save'] speichern,
+   *   um bereits eingegebene Werte zu sichern
+   */
+  foreach($form_state['values'] as $key => $value) {
+    $form_state['storage']['back_save'][$key] = $value;
+  }
+  //Fromularschritt um 1 senken
+  $form_state['storage']['step'] = $form_state['storage']['step'] - 2;
+  return;
+}
+
+// Submitfunction Create Campaign
+
+function chimp_create_form_submit($form, &$form_state) {
+
+
+  // dsm($form_state['storage'] );
+  /*
+   * - solang der letzte Schritt nicht erreicht ist, werden die Werte in
+   *   $form_state['storage']['back_save'] gespeichert und der Benutzer zum Formular zur�ck
+   *   geschickt
+   */
+  if($form_state['storage']['step'] < 4){
+
+
+  /*
+   * - alle gesendeten Werte in $form_state['storage']['back_save'] speichern,
+   *   um bereits eingegebene Werte zu sichern
+   */
+  foreach($form_state['values'] as $key => $value) {
+    $form_state['storage']['values'][$key] = $value;
+    $form_state['storage']['back_save'][$key] = $value;
+  }
+    return;
+  //letzter Formularschritt erreicht
+  }
+
+  else {
+
+    // Create Campaign
+   drupal_set_message($form_state['storage']['values']['content']);
+
+    $content = $form_state['storage']['values']['content'];
+    $content_header = $form_state['storage']['values']['content_header'];
+    $mail = $form_state['storage']['values']['mail'];
+    $subject = $form_state['storage']['values']['subject'];
+    $name = $form_state['storage']['values']['name'];
+    $list = $form_state['storage']['values']['lists'];
+    $template = $form_state['storage']['values']['templates'];
+//  $img = $form_state['values']['upload'];
+
+ $created = create_campaign($list,$template,$subject,$name,$mail,$content_header,$content);
+ if ($created){
+
+ unset($form_state['storage']);
+ $arg = 'cid='.$created;
+ $form_state['redirect'] = array('mailchimp-campaign_send', $arg);
+// print $form_state['storage']['values']['lists'];
+    }
+  }
+}
+
+function chimp_admin_submit($form, &$form_state) {
+  campaign_send($form_state['clicked_button']['#name']);
+  // dsm($form_state['clicked_button']['#name']);
+}
+
+function chimp_send_campaign_submit($form, &$form_state) {
+  if (campaign_send($form_state['clicked_button']['#name'])!=0){
+  $form_state['redirect'] = array('mailchimp-send');
+  }
+  else{}
+}

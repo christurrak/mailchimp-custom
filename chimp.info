@@ -1,0 +1,6 @@
+; $Id$
+name = Chimp
+description = Send a Newsletter via Mailchimp
+dependencies[] = mailchimp
+package = Newsletter
+core = 6.x
