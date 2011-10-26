@@ -59,7 +59,6 @@ function chimp_send_campaign(){
 // Campaign Create Form
 
 
-
 function chimp_create_form($form_state){
 
     $templates=get_templates();
